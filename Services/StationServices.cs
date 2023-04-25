@@ -19,7 +19,6 @@ namespace Train_D.Services
             _context = context;
         }
 
-
         public async Task<IEnumerable<String>> GetAll()
         {
             return await _context.Stations.Select(s => s.StationName).ToListAsync();
@@ -30,7 +29,6 @@ namespace Train_D.Services
             return await _context.Stations.SingleOrDefaultAsync(m => m.StationName == stationName);
         }
 
-
         public async Task<Station> Add(Station station)
         {
             await _context.AddAsync(station);
@@ -38,14 +36,12 @@ namespace Train_D.Services
             return station;
         }
 
-        
         public Station Delete(Station station)
         {
             _context.Remove(station);
             _context.SaveChanges();
             return station;
         }
-
 
         public Station Update(Station station)
         {

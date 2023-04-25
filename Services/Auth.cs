@@ -7,8 +7,10 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using Train_D.Data;
 using Train_D.Helper;
 using Train_D.Models;
+using Train_D.Models.AuthenticationModels;
 
 namespace Train_D.Services
 {
@@ -16,15 +18,17 @@ namespace Train_D.Services
     {
         private readonly UserManager<User> _userManager;
         private readonly RoleManager<IdentityRole> _roleManager;
+        private readonly ApplicationDbContext _context;
         private readonly JWT _jwt;
         private readonly IMapper _mapper;
 
-        public Auth(UserManager<User> userManager, IOptions<JWT> jwt, IMapper mapper, RoleManager<IdentityRole> roleManager)
+        public Auth(UserManager<User> userManager, IOptions<JWT> jwt, IMapper mapper, RoleManager<IdentityRole> roleManager, ApplicationDbContext context)
         {
             _userManager = userManager;
             _jwt = jwt.Value;
             _mapper = mapper;
             _roleManager = roleManager;
+            _context = context;
         }
 
         public async Task<AuthModel> Register(RegisterModel model)
@@ -104,6 +108,60 @@ namespace Train_D.Services
             return result.Succeeded ? String.Empty : "Somthing Went Wrong";
         }
 
+        public async Task<AuthModel> LoginGoogle(string credential)
+        {
+            var settings = new GoogleJsonWebSignature.ValidationSettings()
+            {
+                Audience = new List<string> { this._jwt.GoogleClientId }
+            };
+
+            var payload = await GoogleJsonWebSignature.ValidateAsync(credential, settings);
+
+            var user = await _userManager.Users.FirstOrDefaultAsync(u => u.Email == payload.Email);
+
+            if (user is null)
+            {
+                return (await RegisterGoogle(payload));
+            }
+            var authModel = new AuthModel();
+            var jwtSecurityToken = await CreateJwtToken(user);
+            var rolesList = await _userManager.GetRolesAsync(user);
+
+            authModel.IsAuthenticated = true;
+            authModel.Token = new JwtSecurityTokenHandler().WriteToken(jwtSecurityToken);
+            authModel.Email = user.Email;
+            authModel.UserName = user.UserName;
+            authModel.ExpiresOn = jwtSecurityToken.ValidTo;
+            authModel.Roles = rolesList.ToList();
+
+            return authModel;
+        }
+
+        public async Task<User> GetUser(string UserName)
+        {
+            return await _context.Users.SingleOrDefaultAsync(u => u.UserName == UserName);
+        }
+
+        public async Task<ProfileModel> GetDataForProfile(string UserName)
+        {
+            var user = await _context.Users.SingleOrDefaultAsync(u => u.UserName == UserName);
+            var Result = new ProfileModel
+            {
+                UserName = user.UserName,
+                Email = user.Email,
+                FirstName = user.FirstName,
+                LastName = user.LastName
+            };
+            return Result; 
+        }
+
+        public User UpdateDataForProfile(User user)
+        {
+            _context.Update(user);
+            _context.SaveChanges();
+            return user;
+        }
+
         private async Task<JwtSecurityToken> CreateJwtToken(User user)
         {
             var userClaims = await _userManager.GetClaimsAsync(user);
@@ -135,35 +193,6 @@ namespace Train_D.Services
                 signingCredentials: signingCredentials);
 
             return jwtSecurityToken;
-        }
-
-        public async Task<AuthModel> LoginGoogle(string credential)
-        {
-            var settings = new GoogleJsonWebSignature.ValidationSettings()
-            {
-                Audience = new List<string> { this._jwt.GoogleClientId }
-            };
-
-            var payload = await GoogleJsonWebSignature.ValidateAsync(credential, settings);
-
-            var user = await _userManager.Users.FirstOrDefaultAsync(u => u.Email == payload.Email);
-
-            if (user is null)
-            {
-                return (await RegisterGoogle(payload));
-            }
-            var authModel = new AuthModel();
-            var jwtSecurityToken = await CreateJwtToken(user);
-            var rolesList = await _userManager.GetRolesAsync(user);
-
-            authModel.IsAuthenticated = true;
-            authModel.Token = new JwtSecurityTokenHandler().WriteToken(jwtSecurityToken);
-            authModel.Email = user.Email;
-            authModel.UserName = user.UserName;
-            authModel.ExpiresOn = jwtSecurityToken.ValidTo;
-            authModel.Roles = rolesList.ToList();
-
-            return authModel;
         }
 
         private async Task<AuthModel> RegisterGoogle(GoogleJsonWebSignature.Payload payload)
